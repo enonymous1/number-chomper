@@ -28,7 +28,7 @@ git clone https://github.com/enonymous1/number-chomper.git
 cd number-chomper
 ```
 
-That gives you three files: `index.html` (the whole game), `README.md` (this file), and `LICENSE` (MIT). If you only want to play, you do not even need the clone — open the deployed site, or download `index.html` on its own and open it.
+That gives you the game (`index.html`), this README, `LICENSE` (MIT), and the Pages workflow (`.github/workflows/pages.yml`). If you only want to play, you do not even need the clone — open the deployed site, or download `index.html` on its own and open it.
 
 ## Local Development
 
@@ -123,18 +123,21 @@ The coupling to know about before editing: rendering reads the global `game` obj
 
 ```text
 number-chomper/
-├── index.html   # The whole game: styles, markup, and inline script
-├── README.md    # This file
-└── LICENSE      # MIT
+├── index.html                    # The whole game: styles, markup, and inline script
+├── README.md                     # This file
+├── LICENSE                       # MIT
+└── .github/workflows/pages.yml  # CI check + GitHub Pages deploy (see Deployment)
 ```
 
 Visual assets, when captured, live under `docs/images/` (see below) and are referenced from this README only.
 
 ## Testing
 
-There is no automated test suite yet. The current verification is the syntax check and manual playthrough in Local Development above, plus a fresh-extraction HTTP smoke check (page serves 200 with the title "Number Chomper").
+There is no automated test suite yet. Continuous integration (`.github/workflows/pages.yml`) runs the syntax check on every push to `main` and every pull request: it extracts the inline script from `index.html` and runs `node --check` on it. A failed check blocks the Pages deploy.
 
-Planned, in order: a `node --check` CI job on the extracted script, then Node tests for the pure logic (prime testing, rule pools being disjoint, the Scribbler solvability guard) once that logic is extracted from the DOM code. A headless-browser smoke test is deferred until that extraction lands — testing the current global-state script through a DOM shim would mostly test the shim.
+The remaining verification is manual: the playthrough in Local Development above, plus a fresh-extraction HTTP smoke check (page serves 200 with the title "Number Chomper").
+
+Planned, in order: Node tests for the pure logic (prime testing, rule pools being disjoint, the Scribbler solvability guard) once that logic is extracted from the DOM code. A headless-browser smoke test is deferred until that extraction lands — testing the current global-state script through a DOM shim would mostly test the shim.
 
 ## Known Limitations
 
@@ -142,20 +145,25 @@ Planned, in order: a `node --check` CI job on the extracted script, then Node te
 - There is no saved progress, no account, and no multiplayer.
 - Sound requires WebAudio; without it the game is silent.
 - Google Fonts are fetched at runtime; offline play falls back to system fonts.
-- Keyboard focus is not yet moved into overlays, and rule changes are not yet announced via `aria-live` — see the staff review for the accessibility follow-ups.
+- Keyboard focus is now moved into overlays and the progress line is `aria-live`, but a full screen-reader playthrough is still untested — see the staff review for the remaining accessibility follow-ups.
 
 ## Deployment
 
-### GitHub Pages (branch deploy)
+### GitHub Pages (GitHub Actions — keeps the site current on every push)
+
+Every push to `main` runs `.github/workflows/pages.yml`: first the `check` job extracts the inline script from `index.html` and runs `node --check` on it, then — only if the check passes — the `deploy` job uploads the repo root and deploys it to Pages. There is no build step; the site is served from `index.html`. Pull requests run the check only and never deploy, and the workflow can also be run manually from Actions → Pages → Run workflow.
+
+One-time setup, after the first push (this setting cannot travel in a push):
 
 1. Push this repo to GitHub.
-2. Settings → Pages → Build and deployment → Source: Deploy from a branch.
-3. Branch: `main`, folder: `/ (root)`.
-4. Save. The site will be served from `index.html` at `https://enonymous1.github.io/number-chomper/`.
+2. Settings → Pages → Build and deployment → Source: GitHub Actions.
+3. Save, then push to `main` (or run the workflow manually) and watch the Pages run in the Actions tab.
+
+The site will be live at `https://enonymous1.github.io/number-chomper/`. Do NOT set Pages back to "Deploy from a branch" while this workflow runs — the two deploy paths will fight over the site.
 
 Verify the deploy by opening that URL, pressing Start, and playing one level: the title screen, rule banner, and HUD should all render, and a correct chomp should move the score.
 
-If the Pages site is blank, check in order: the branch and folder in Pages settings, that the file at the repo root is named exactly `index.html`, and that the push actually landed on `main` (a push to another branch will not deploy under branch settings).
+If the Pages site is blank or stale, check in order: Pages source is GitHub Actions (not branch deploy), the latest Pages workflow run succeeded (a failed syntax check blocks the deploy by design), the file at the repo root is named exactly `index.html`, and the push actually landed on `main` (a push to another branch will not deploy).
 
 <!-- ![Pages site](docs/images/pages-site.png) -->
 <!-- Capture only after the first real deploy: the deployed Pages site itself. Do not mock this. See the staff review §5.1, asset 6. -->

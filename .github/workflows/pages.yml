@@ -1,0 +1,58 @@
+# Deploy Number Chomper to GitHub Pages, and keep it current.
+#
+# Every push to main first runs the syntax check, then deploys the
+# repo root (index.html, no build step) to Pages. Pull requests run
+# the check only — they never deploy.
+#
+# One-time setup, after the first push (not in this file, and it
+# cannot travel in a push): Settings → Pages → Build and
+# deployment → Source: GitHub Actions. Do NOT set it back to
+# "Deploy from a branch" while this workflow runs, or the two
+# deploy paths will fight over the site.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check inline script syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract and syntax-check the inline script
+        run: |
+          python3 -c "import re, pathlib; t = pathlib.Path('index.html').read_text(); open('/tmp/chomper.js', 'w').write(re.search(r'<script>(.*)</script>', t, re.S).group(1))"
+          node --check /tmp/chomper.js
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
