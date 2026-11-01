@@ -1,0 +1,1148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="data:," />
+    <title>Number Chomper</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --page-bg: #10151f;
+        --cabinet: #1a2130;
+        --cabinet-edge: #2b364d;
+        --screen: #0b3d24;
+        --screen-deep: #072a18;
+        --cell: #0e4d2c;
+        --cell-edge: #14653a;
+        --cell-eaten: #08331b;
+        --ink: #e8f5ec;
+        --ink-dim: #9db8a8;
+        --amber: #ffc93c;
+        --amber-deep: #e8a812;
+        --green: #57e389;
+        --green-deep: #2fbf5f;
+        --red: #ff5d5d;
+        --cyan: #4fd8e8;
+        --btn: #232f47;
+        --btn-edge: #3a4a6b;
+        --panel: #161e2e;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --page-bg: #dfe7da;
+          --cabinet: #2a3520;
+          --cabinet-edge: #46543a;
+          --panel: #243018;
+          --btn: #33431f;
+          --btn-edge: #55663f;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        background: var(--page-bg);
+        color: var(--ink);
+        font-family: "Nunito", system-ui, sans-serif;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        padding: 14px 10px 34px;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .cabinet {
+        width: 100%;
+        max-width: 620px;
+        background: var(--cabinet);
+        border: 2px solid var(--cabinet-edge);
+        border-radius: 18px;
+        padding: 16px 16px 20px;
+        box-shadow: 0 18px 40px rgba(0,0,0,.45);
+      }
+      /* ---------- HUD ---------- */
+      .hud {
+        display: flex;
+        align-items: stretch;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .hud-box {
+        flex: 1 1 0;
+        min-width: 86px;
+        background: var(--panel);
+        border: 1px solid var(--cabinet-edge);
+        border-radius: 10px;
+        padding: 7px 10px 8px;
+        text-align: center;
+      }
+      .hud-label {
+        font-family: "Press Start 2P", monospace;
+        font-size: 8px;
+        letter-spacing: 1px;
+        color: var(--ink-dim);
+        text-transform: uppercase;
+        margin-bottom: 5px;
+      }
+      .hud-value {
+        font-family: "Press Start 2P", monospace;
+        font-size: 17px;
+        color: var(--amber);
+        line-height: 1;
+      }
+      .hud-value.green { color: var(--green); }
+      .lives-row { display: flex; justify-content: center; gap: 3px; min-height: 22px; align-items: center; }
+      .life-icon { width: 22px; height: 22px; }
+      .life-icon.lost { opacity: .18; filter: grayscale(1); }
+      .hud-btns { display: flex; gap: 8px; }
+      .icon-btn {
+        background: var(--btn);
+        border: 1px solid var(--btn-edge);
+        color: var(--ink);
+        border-radius: 10px;
+        font-family: "Press Start 2P", monospace;
+        font-size: 10px;
+        padding: 0 14px;
+        cursor: pointer;
+        min-height: 48px;
+      }
+      .icon-btn:active { transform: translateY(1px); }
+      /* ---------- Rule banner ---------- */
+      .rule-banner {
+        background: linear-gradient(180deg, #14532d, #0d4022);
+        border: 2px solid var(--green-deep);
+        border-radius: 12px;
+        text-align: center;
+        padding: 11px 10px 12px;
+        margin-bottom: 12px;
+      }
+      .rule-kicker {
+        font-family: "Press Start 2P", monospace;
+        font-size: 8px;
+        letter-spacing: 2px;
+        color: var(--green);
+        text-transform: uppercase;
+        margin-bottom: 7px;
+      }
+      .rule-text {
+        font-family: "Press Start 2P", monospace;
+        font-size: clamp(14px, 4.4vw, 21px);
+        color: #ffffff;
+        line-height: 1.35;
+      }
+      .rule-text .rule-num { color: var(--amber); }
+      .progress-line {
+        margin-top: 8px;
+        font-size: 13px;
+        font-weight: 800;
+        color: var(--ink-dim);
+      }
+      .progress-line b { color: var(--green); }
+      /* ---------- Board ---------- */
+      .board-wrap {
+        position: relative;
+        background: var(--screen-deep);
+        border: 3px solid #000;
+        border-radius: 12px;
+        overflow: hidden;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .board {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        grid-template-rows: repeat(5, 1fr);
+        aspect-ratio: 6 / 5;
+      }
+      .cell {
+        background: var(--cell);
+        border: 1px solid var(--cell-edge);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        font-size: clamp(17px, 5.6vw, 30px);
+        color: #eafff1;
+        text-shadow: 0 2px 0 rgba(0,0,0,.35);
+        transition: background .15s;
+      }
+      .cell.eaten { background: var(--cell-eaten); color: transparent; text-shadow: none; }
+      .cell.flash-good { background: #1d7a44; }
+      .cell.flash-bad { background: #8c2b2b; }
+      .creature {
+        position: absolute;
+        width: calc(100% / 6);
+        height: calc(100% / 5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+        transition: left .16s ease, top .16s ease;
+        z-index: 3;
+      }
+      .creature svg { width: 82%; height: 82%; filter: drop-shadow(0 3px 3px rgba(0,0,0,.45)); }
+      .creature.chomper { z-index: 5; }
+      .creature.chomper.chomp svg { animation: chompAnim .28s ease; }
+      .creature.chomper.hurt { animation: hurtAnim .5s ease; }
+      .creature.chomper.invincible { opacity: .45; }
+      .creature.gobbler { z-index: 4; }
+      @keyframes chompAnim {
+        0% { transform: scale(1); }
+        40% { transform: scale(1.22, .82); }
+        100% { transform: scale(1); }
+      }
+      @keyframes hurtAnim {
+        0%, 100% { transform: translateX(0); }
+        20% { transform: translateX(-5px) rotate(-6deg); }
+        40% { transform: translateX(5px) rotate(6deg); }
+        60% { transform: translateX(-4px); }
+        80% { transform: translateX(4px); }
+      }
+      .float-score {
+        position: absolute;
+        z-index: 8;
+        font-family: "Press Start 2P", monospace;
+        font-size: 13px;
+        color: var(--amber);
+        pointer-events: none;
+        animation: floatUp .8s ease-out forwards;
+        text-shadow: 0 2px 0 rgba(0,0,0,.6);
+      }
+      @keyframes floatUp {
+        from { transform: translateY(0); opacity: 1; }
+        to { transform: translateY(-34px); opacity: 0; }
+      }
+      /* ---------- Overlays ---------- */
+      .overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(4, 20, 10, .9);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        justify-content: safe center;
+        overflow-y: auto;
+        text-align: center;
+        padding: 20px 18px;
+        z-index: 10;
+      }
+      .overlay[hidden] { display: none; }
+      .overlay h2 {
+        font-family: "Press Start 2P", monospace;
+        font-size: clamp(17px, 5vw, 26px);
+        color: var(--amber);
+        margin: 0 0 12px;
+        line-height: 1.4;
+      }
+      .overlay h2.green { color: var(--green); }
+      .overlay h2.red { color: var(--red); }
+      .overlay p { margin: 0 0 12px; font-size: 15.5px; font-weight: 700; color: var(--ink); max-width: 42ch; line-height: 1.5; }
+      .overlay p.dim { color: var(--ink-dim); font-size: 13.5px; }
+      .big-chomper { width: 92px; height: 92px; margin-bottom: 8px; }
+      .cta-btn {
+        background: var(--amber);
+        border: none;
+        border-bottom: 4px solid var(--amber-deep);
+        color: #231a00;
+        font-family: "Press Start 2P", monospace;
+        font-size: 13px;
+        padding: 14px 22px;
+        border-radius: 10px;
+        cursor: pointer;
+        margin-top: 4px;
+      }
+      .cta-btn:active { transform: translateY(2px); border-bottom-width: 2px; }
+      .ghost-btn {
+        background: transparent;
+        border: 1px solid var(--btn-edge);
+        color: var(--ink);
+        font-family: "Press Start 2P", monospace;
+        font-size: 10px;
+        padding: 11px 16px;
+        border-radius: 10px;
+        cursor: pointer;
+        margin-top: 10px;
+      }
+      .score-entry { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; justify-content: center; }
+      .score-entry input {
+        background: #0a141f;
+        border: 1px solid var(--btn-edge);
+        border-radius: 8px;
+        color: var(--ink);
+        font-family: "Nunito", sans-serif;
+        font-weight: 800;
+        font-size: 16px;
+        padding: 10px 12px;
+        width: 170px;
+        text-transform: uppercase;
+      }
+      .score-entry button {
+        background: var(--green-deep);
+        border: none;
+        border-bottom: 4px solid #1e8a41;
+        color: #04170a;
+        font-family: "Press Start 2P", monospace;
+        font-size: 11px;
+        padding: 10px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .final-score {
+        font-family: "Press Start 2P", monospace;
+        font-size: 30px;
+        color: #fff;
+        margin: 2px 0 10px;
+      }
+      /* ---------- Leaderboard ---------- */
+      .scores-panel {
+        margin-top: 16px;
+        background: var(--panel);
+        border: 1px solid var(--cabinet-edge);
+        border-radius: 12px;
+        padding: 13px 16px 15px;
+      }
+      .scores-panel h3 {
+        font-family: "Press Start 2P", monospace;
+        font-size: 11px;
+        color: var(--amber);
+        margin: 0 0 10px;
+        letter-spacing: 1px;
+      }
+      .scores-panel ol { margin: 0; padding: 0; list-style: none; counter-reset: rank; }
+      .scores-panel li {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 5px 2px;
+        border-bottom: 1px dashed rgba(255,255,255,.12);
+        font-weight: 800;
+        font-size: 15px;
+      }
+      .scores-panel li:last-child { border-bottom: none; }
+      .scores-panel .rank { color: var(--ink-dim); font-family: "Press Start 2P", monospace; font-size: 11px; margin-right: 10px; }
+      .scores-panel .s-name { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .scores-panel .s-level { color: var(--ink-dim); font-size: 13px; }
+      .scores-panel .s-score { color: var(--amber); font-family: "Press Start 2P", monospace; font-size: 13px; }
+      .scores-empty { color: var(--ink-dim); font-weight: 700; font-size: 14px; margin: 0; }
+      /* ---------- Touch controls ---------- */
+      .touch-controls {
+        margin-top: 14px;
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .dpad {
+        display: grid;
+        grid-template-columns: repeat(3, 54px);
+        grid-template-rows: repeat(3, 54px);
+        gap: 5px;
+      }
+      .dpad button, .chomp-btn {
+        background: var(--btn);
+        border: 1px solid var(--btn-edge);
+        border-bottom: 4px solid #141c2e;
+        color: var(--ink);
+        border-radius: 12px;
+        font-size: 20px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        touch-action: manipulation;
+      }
+      .dpad button:active, .chomp-btn:active { transform: translateY(2px); border-bottom-width: 2px; background: #2c3c5c; }
+      .dpad .spacer { visibility: hidden; }
+      .chomp-btn {
+        width: 108px;
+        height: 108px;
+        border-radius: 50%;
+        background: #14532d;
+        border-color: var(--green-deep);
+        border-bottom: 5px solid #0d4022;
+        font-family: "Press Start 2P", monospace;
+        font-size: 12px;
+        color: var(--green);
+        flex-direction: column;
+        gap: 5px;
+      }
+      .chomp-btn svg { width: 40px; height: 40px; }
+      @media (hover: none), (max-width: 700px) {
+        .touch-controls { display: flex; }
+      }
+      /* ---------- Help ---------- */
+      .help {
+        margin-top: 16px;
+        background: var(--panel);
+        border: 1px solid var(--cabinet-edge);
+        border-radius: 12px;
+        padding: 13px 16px 8px;
+      }
+      .help h3 {
+        font-family: "Press Start 2P", monospace;
+        font-size: 11px;
+        color: var(--green);
+        margin: 0 0 10px;
+        letter-spacing: 1px;
+      }
+      .help ul { margin: 0 0 8px; padding-left: 20px; }
+      .help li { font-size: 14.5px; font-weight: 700; color: var(--ink); margin-bottom: 6px; line-height: 1.45; }
+      .help li span { color: var(--ink-dim); font-weight: 600; }
+      .gobbler-key { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 10px; }
+      .gobbler-key div { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 800; }
+      .gobbler-key svg { width: 30px; height: 30px; }
+      kbd {
+        background: #0a141f;
+        border: 1px solid var(--btn-edge);
+        border-bottom-width: 3px;
+        border-radius: 5px;
+        padding: 1px 6px;
+        font-family: "Press Start 2P", monospace;
+        font-size: 9px;
+        color: var(--amber);
+      }
+      .toast {
+        position: absolute;
+        left: 50%;
+        top: 12px;
+        transform: translateX(-50%);
+        z-index: 9;
+        background: rgba(0,0,0,.82);
+        border: 1px solid var(--amber);
+        color: var(--amber);
+        font-family: "Press Start 2P", monospace;
+        font-size: 11px;
+        padding: 9px 14px;
+        border-radius: 8px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity .25s;
+        white-space: nowrap;
+      }
+      .toast.show { opacity: 1; }
+      @media (max-width: 520px) {
+        .overlay { padding: 12px 14px; }
+        .big-chomper { width: 52px; height: 52px; margin-bottom: 4px; }
+        .overlay h2 { font-size: 16px; margin-bottom: 8px; }
+        .overlay p { font-size: 13.5px; margin-bottom: 8px; line-height: 1.4; }
+        .overlay p.dim { font-size: 12px; }
+        .cta-btn { font-size: 11px; padding: 11px 18px; }
+        .ghost-btn { padding: 9px 13px; margin-top: 7px; }
+        .final-score { font-size: 22px; margin-bottom: 6px; }
+        .score-entry input { width: 140px; padding: 8px 10px; }
+        .cabinet { padding: 12px 10px 16px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .creature { transition: none; }
+        .float-score { animation-duration: .01s; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="cabinet">
+      <!-- HUD -->
+      <div class="hud">
+        <div class="hud-box">
+          <div class="hud-label">Score</div>
+          <div class="hud-value" id="hudScore">0</div>
+        </div>
+        <div class="hud-box">
+          <div class="hud-label">Level</div>
+          <div class="hud-value green" id="hudLevel">1</div>
+        </div>
+        <div class="hud-box">
+          <div class="hud-label">Chompers</div>
+          <div class="lives-row" id="hudLives"></div>
+        </div>
+        <div class="hud-btns">
+          <button class="icon-btn" id="btnSound" type="button" aria-label="Toggle sound">SOUND ON</button>
+          <button class="icon-btn" id="btnPause" type="button" aria-label="Pause game">II</button>
+        </div>
+      </div>
+
+      <!-- Rule -->
+      <div class="rule-banner">
+        <div class="rule-kicker">Chomp only the numbers that are</div>
+        <div class="rule-text" id="ruleText">Multiples of <span class="rule-num">3</span></div>
+        <div class="progress-line" id="progressLine"><b>0</b> of 0 still on the board</div>
+      </div>
+
+      <!-- Board -->
+      <div class="board-wrap" id="boardWrap">
+        <div class="board" id="board"></div>
+        <div class="toast" id="toast"></div>
+
+        <!-- Start overlay -->
+        <div class="overlay" id="ovStart">
+          <div class="big-chomper" id="startChomper"></div>
+          <h2>NUMBER<br />CHOMPER</h2>
+          <p>Chomp every number that matches the rule at the top. Wrong numbers — and hungry Gobblers — cost you a Chomper.</p>
+          <p class="dim">Arrow keys / WASD to move &nbsp;·&nbsp; SPACE to chomp<br />On touch screens: swipe the board or use the pad, tap CHOMP.</p>
+          <button class="cta-btn" id="btnStart" type="button">START GAME</button>
+        </div>
+
+        <!-- Pause overlay -->
+        <div class="overlay" id="ovPause" hidden>
+          <h2>PAUSED</h2>
+          <p>Take a breath. The Gobblers are frozen too.</p>
+          <button class="cta-btn" id="btnResume" type="button">RESUME</button>
+          <button class="ghost-btn" id="btnQuitFromPause" type="button">QUIT TO TITLE</button>
+        </div>
+
+        <!-- Level clear overlay -->
+        <div class="overlay" id="ovLevel" hidden>
+          <h2 class="green" id="levelClearTitle">LEVEL 1 CLEAR!</h2>
+          <p id="levelClearText">Board swept clean.</p>
+          <button class="cta-btn" id="btnNextLevel" type="button">NEXT LEVEL</button>
+        </div>
+
+        <!-- Game over overlay -->
+        <div class="overlay" id="ovOver" hidden>
+          <h2 class="red">GAME OVER</h2>
+          <p style="margin-bottom:2px;">Final score</p>
+          <div class="final-score" id="finalScore">0</div>
+          <p class="dim" id="finalDetail"></p>
+          <div class="score-entry" id="scoreEntry">
+            <input id="nameInput" type="text" maxlength="10" placeholder="YOUR NAME" aria-label="Name for the high score table" autocomplete="off" />
+            <button id="btnSaveScore" type="button">SAVE SCORE</button>
+          </div>
+          <p class="dim" id="scoreSavedMsg" hidden>Saved to the high score table below.</p>
+          <button class="cta-btn" id="btnAgain" type="button">PLAY AGAIN</button>
+          <button class="ghost-btn" id="btnTitleFromOver" type="button">TITLE SCREEN</button>
+        </div>
+      </div>
+
+      <!-- Touch controls -->
+      <div class="touch-controls" aria-label="Touch controls">
+        <div class="dpad">
+          <span class="spacer"></span>
+          <button type="button" data-dir="up" aria-label="Move up">▲</button>
+          <span class="spacer"></span>
+          <button type="button" data-dir="left" aria-label="Move left">◀</button>
+          <span class="spacer"></span>
+          <button type="button" data-dir="right" aria-label="Move right">▶</button>
+          <span class="spacer"></span>
+          <button type="button" data-dir="down" aria-label="Move down">▼</button>
+          <span class="spacer"></span>
+        </div>
+        <button class="chomp-btn" id="btnChomp" type="button" aria-label="Chomp the number under the Chomper">
+          <span id="chompIcon"></span>
+          CHOMP
+        </button>
+      </div>
+
+      <!-- High scores -->
+      <div class="scores-panel">
+        <h3>HIGH SCORES</h3>
+        <ol id="scoreList"></ol>
+        <p class="scores-empty" id="scoreEmpty">No scores yet this session — be the first name on the board.</p>
+      </div>
+
+      <!-- Help -->
+      <div class="help">
+        <h3>HOW TO PLAY</h3>
+        <ul>
+          <li>Move the Chomper onto a number and chomp it. <span>Only numbers matching the rule count — clear them all to finish the level.</span></li>
+          <li>Chomp a wrong number, or let a Gobbler catch you, and you lose a Chomper. <span>You start with 3.</span></li>
+          <li>Scoring: <span>+10 per correct chomp, streaks build a bonus, and clearing a level pays 100 + 10 per level.</span></li>
+          <li><kbd>←↑↓→</kbd> / <kbd>WASD</kbd> move &nbsp;<kbd>SPACE</kbd> chomp &nbsp;<kbd>P</kbd> pause</li>
+        </ul>
+        <div class="gobbler-key" id="gobblerKey"></div>
+        <ul>
+          <li><span><b style="color:#ff8a5c">Scribbler</b> rewrites numbers he steps on. <b style="color:#c792ff">Hunter</b> hunts you down. <b style="color:#4fd8e8">Wanderer</b> just wanders — but he's still hungry.</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <script>
+      "use strict";
+      /* ================= Creatures (inline SVG) ================= */
+      function chomperSVG() {
+        return '<svg viewBox="0 0 64 64" aria-hidden="true">' +
+          '<path d="M10 14 Q32 2 54 14 L54 30 L40 32 L54 38 L54 50 Q32 62 10 50 Z" fill="#3ddc68" stroke="#1d7a3c" stroke-width="3"/>' +
+          '<circle cx="24" cy="20" r="4.5" fill="#fff"/><circle cx="24" cy="21" r="2.4" fill="#122"/>' +
+          '<circle cx="40" cy="20" r="4.5" fill="#fff"/><circle cx="40" cy="21" r="2.4" fill="#122"/>' +
+          '<path d="M18 44 L24 38 L30 44 L36 38 L42 44 L46 39" fill="none" stroke="#0c4d24" stroke-width="3" stroke-linecap="round"/>' +
+          '<rect x="16" y="52" width="9" height="8" rx="2" fill="#2fbf5f" stroke="#1d7a3c" stroke-width="2"/>' +
+          '<rect x="39" y="52" width="9" height="8" rx="2" fill="#2fbf5f" stroke="#1d7a3c" stroke-width="2"/></svg>';
+      }
+      function gobblerSVG(kind) {
+        var colors = {
+          scribbler:  { body: "#ff8a5c", dark: "#b34a1e", belly: "#ffd9c4" },
+          hunter:  { body: "#c792ff", dark: "#7c3fbf", belly: "#ecd9ff" },
+          wanderer: { body: "#4fd8e8", dark: "#1f7f96", belly: "#d3f6fb" }
+        };
+        var c = colors[kind] || colors.wanderer;
+        var horns = kind === "hunter"
+          ? '<path d="M16 12 L12 2 L24 8 Z" fill="' + c.dark + '"/><path d="M48 12 L52 2 L40 8 Z" fill="' + c.dark + '"/>'
+          : '<circle cx="18" cy="10" r="4" fill="' + c.dark + '"/><circle cx="46" cy="10" r="4" fill="' + c.dark + '"/>';
+        var mouth = kind === "scribbler"
+          ? '<path d="M20 42 Q32 34 44 42 Q32 50 20 42 Z" fill="#5b1d05"/>'
+          : '<path d="M22 44 L28 38 L34 44 L40 38 L43 43" fill="none" stroke="#212b10" stroke-width="3" stroke-linecap="round"/>';
+        return '<svg viewBox="0 0 64 64" aria-hidden="true">' + horns +
+          '<ellipse cx="32" cy="34" rx="23" ry="24" fill="' + c.body + '" stroke="' + c.dark + '" stroke-width="3"/>' +
+          '<ellipse cx="32" cy="44" rx="12" ry="10" fill="' + c.belly + '" opacity=".65"/>' +
+          '<circle cx="24" cy="28" r="5" fill="#fff"/><circle cx="25" cy="29" r="2.6" fill="#122"/>' +
+          '<circle cx="40" cy="28" r="5" fill="#fff"/><circle cx="39" cy="29" r="2.6" fill="#122"/>' +
+          mouth +
+          '<rect x="18" y="55" width="9" height="7" rx="2" fill="' + c.dark + '"/>' +
+          '<rect x="37" y="55" width="9" height="7" rx="2" fill="' + c.dark + '"/></svg>';
+      }
+
+      /* ================= Audio (WebAudio, synthesized) ================= */
+      var AudioFX = (function () {
+        var ctx = null, enabled = true;
+        function ensure() {
+          if (!ctx) {
+            var AC = window.AudioContext || window.webkitAudioContext;
+            if (AC) ctx = new AC();
+          }
+          if (ctx && ctx.state === "suspended") ctx.resume();
+          return ctx;
+        }
+        function tone(freq, dur, type, vol, when, slideTo) {
+          if (!enabled) return;
+          var c = ensure(); if (!c) return;
+          var t = c.currentTime + (when || 0);
+          var o = c.createOscillator(), g = c.createGain();
+          o.type = type || "square";
+          o.frequency.setValueAtTime(freq, t);
+          if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+          g.gain.setValueAtTime(vol || 0.12, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+          o.connect(g); g.connect(c.destination);
+          o.start(t); o.stop(t + dur + 0.02);
+        }
+        return {
+          unlock: function () { ensure(); },
+          toggle: function () { enabled = !enabled; if (enabled) ensure(); return enabled; },
+          isOn: function () { return enabled; },
+          move: function () { tone(220, 0.05, "square", 0.04); },
+          chompGood: function (streak) {
+            var base = 392 + Math.min(streak, 8) * 40;
+            tone(base, 0.09, "square", 0.12);
+            tone(base * 1.335, 0.1, "square", 0.12, 0.07);
+            tone(base * 1.5, 0.14, "square", 0.12, 0.14);
+          },
+          chompBad: function () { tone(160, 0.3, "sawtooth", 0.14, 0, 70); },
+          hurt: function () {
+            tone(520, 0.16, "triangle", 0.16, 0, 130);
+            tone(300, 0.24, "triangle", 0.14, 0.12, 80);
+          },
+          levelClear: function () {
+            var notes = [523, 659, 784, 1047];
+            for (var i = 0; i < notes.length; i++) tone(notes[i], 0.16, "square", 0.12, i * 0.11);
+            tone(1319, 0.34, "square", 0.12, 0.46);
+          },
+          gameOver: function () {
+            var notes = [392, 370, 349, 311];
+            for (var i = 0; i < notes.length; i++) tone(notes[i], 0.26, "triangle", 0.14, i * 0.2);
+          },
+          gobblerSpawn: function () { tone(140, 0.14, "sawtooth", 0.06, 0, 220); }
+        };
+      })();
+
+      /* ================= Rules ================= */
+      function isPrime(n) {
+        if (n < 2) return false;
+        for (var i = 2; i * i <= n; i++) if (n % i === 0) return false;
+        return true;
+      }
+      function randInt(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
+      function shuffle(arr) {
+        for (var i = arr.length - 1; i > 0; i--) {
+          var j = Math.floor(Math.random() * (i + 1));
+          var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+        }
+        return arr;
+      }
+      function pickRule(level) {
+        var kinds = ["multiples", "factors", "primes", "greaterless", "evenodd"];
+        var kind = kinds[(level - 1) % kinds.length];
+        if (level > 5 && Math.random() < 0.5) kind = kinds[randInt(0, kinds.length - 1)];
+        if (kind === "multiples") {
+          var k = randInt(2, Math.min(9, 3 + level));
+          return { label: 'Multiples of <span class="rule-num">' + k + "</span>", short: "Multiples of " + k,
+            test: function (n) { return n % k === 0; },
+            correctPool: function () { var p = []; for (var m = k; m <= k * 12; m += k) p.push(m); return p; },
+            wrongPool: function () { var p = []; for (var n = 1; n <= k * 12 + 4; n++) if (n % k !== 0) p.push(n); return p; } };
+        }
+        if (kind === "factors") {
+          var targets = [12, 16, 18, 20, 24, 28, 30, 32, 36, 40, 42, 48, 54, 60, 72, 84, 90, 96, 108, 120];
+          var N = targets[randInt(0, targets.length - 1)];
+          return { label: 'Factors of <span class="rule-num">' + N + "</span>", short: "Factors of " + N,
+            test: function (n) { return n >= 1 && N % n === 0; },
+            correctPool: function () { var p = []; for (var d = 1; d <= N; d++) if (N % d === 0) p.push(d); return p; },
+            wrongPool: function () { var p = []; for (var n = 1; n <= Math.min(60, N + 12); n++) if (N % n !== 0) p.push(n); return p; } };
+        }
+        if (kind === "primes") {
+          var max = 30 + level * 5;
+          return { label: '<span class="rule-num">Prime</span> Numbers', short: "Prime Numbers",
+            test: isPrime,
+            correctPool: function () { var p = []; for (var n = 2; n <= max; n++) if (isPrime(n)) p.push(n); return p; },
+            wrongPool: function () { var p = []; for (var n = 1; n <= max; n++) if (!isPrime(n)) p.push(n); return p; } };
+        }
+        if (kind === "greaterless") {
+          var greater = Math.random() < 0.5;
+          var T = randInt(12, 40 + level * 4);
+          return { label: (greater ? "Greater than " : "Less than ") + '<span class="rule-num">' + T + "</span>",
+            short: (greater ? "Greater than " : "Less than ") + T,
+            test: function (n) { return greater ? n > T : n < T; },
+            correctPool: function () { var p = [], n; if (greater) { for (n = T + 1; n <= T + 30; n++) p.push(n); } else { for (n = Math.max(1, T - 30); n < T; n++) p.push(n); } return p; },
+            wrongPool: function () { var p = [], n; if (greater) { for (n = Math.max(1, T - 25); n <= T; n++) p.push(n); } else { for (n = T; n <= T + 25; n++) p.push(n); } return p; } };
+        }
+        var even = Math.random() < 0.5;
+        return { label: '<span class="rule-num">' + (even ? "Even" : "Odd") + "</span> Numbers", short: (even ? "Even" : "Odd") + " Numbers",
+          test: function (n) { return even ? n % 2 === 0 : n % 2 === 1; },
+          correctPool: function () { var p = []; for (var n = 1; n <= 99; n++) if ((n % 2 === 0) === even) p.push(n); return p; },
+          wrongPool: function () { var p = []; for (var n = 1; n <= 99; n++) if ((n % 2 === 0) !== even) p.push(n); return p; } };
+      }
+
+      /* ================= Game state ================= */
+      var COLS = 6, ROWS = 5, CELLS = COLS * ROWS;
+      var game = null;
+      var highScores = []; // session leaderboard (name, score, level)
+
+      var boardEl = document.getElementById("board");
+      var wrapEl = document.getElementById("boardWrap");
+      var cellEls = [];
+      (function buildCells() {
+        for (var i = 0; i < CELLS; i++) {
+          var d = document.createElement("div");
+          d.className = "cell";
+          boardEl.appendChild(d);
+          cellEls.push(d);
+        }
+      })();
+      document.getElementById("startChomper").innerHTML = chomperSVG();
+      document.getElementById("chompIcon").innerHTML = chomperSVG();
+      document.getElementById("gobblerKey").innerHTML =
+        '<div>' + gobblerSVG("scribbler") + " Scribbler</div>" +
+        '<div>' + gobblerSVG("hunter") + " Hunter</div>" +
+        '<div>' + gobblerSVG("wanderer") + " Wanderer</div>";
+
+      var chomperEl = document.createElement("div");
+      chomperEl.className = "creature chomper";
+      chomperEl.innerHTML = chomperSVG();
+      wrapEl.appendChild(chomperEl);
+
+      function idx(x, y) { return y * COLS + x; }
+
+      function newGame() {
+        game = {
+          level: 1, score: 0, lives: 3, streak: 0,
+          state: "ready", rule: null, values: [], eaten: [],
+          chomper: { x: 2, y: 2 }, gobblers: [], gobblerEls: [],
+          invincibleUntil: 0, timer: null, elapsed: 0
+        };
+        setupLevel(1);
+      }
+
+      function gobblerCount(level) { return Math.min(4, 1 + Math.floor((level - 1) / 2)); }
+      function gobblerSpeed(level) { return Math.max(430, 1500 - (level - 1) * 130); }
+
+      function setupLevel(level) {
+        stopTimer();
+        game.level = level;
+        game.rule = pickRule(level);
+        game.streak = 0;
+        game.chomper = { x: 2, y: 2 };
+        game.invincibleUntil = 0;
+
+        var correctPool = shuffle(game.rule.correctPool().slice());
+        var wrongPool = shuffle(game.rule.wrongPool().slice());
+        var wantCorrect = Math.min(correctPool.length, randInt(9, 13));
+        var values = [];
+        var ci = 0, wi = 0, i;
+        for (i = 0; i < wantCorrect; i++) values.push(correctPool[ci++ % correctPool.length]);
+        while (values.length < CELLS) values.push(wrongPool[wi++ % wrongPool.length]);
+        game.values = shuffle(values);
+        game.eaten = game.values.map(function () { return false; });
+
+        // Gobblers: spawn away from the chomper
+        var kinds = ["wanderer", "scribbler", "hunter", "wanderer"];
+        game.gobblers = [];
+        var corners = [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 0, y: 4 }, { x: 5, y: 4 }];
+        shuffle(corners);
+        for (i = 0; i < gobblerCount(level); i++) {
+          game.gobblers.push({ x: corners[i].x, y: corners[i].y, kind: kinds[i % kinds.length], dir: { x: 0, y: 0 } });
+        }
+        rebuildGobblerEls();
+        document.getElementById("ruleText").innerHTML = game.rule.label;
+        game.state = "playing";
+        render();
+        startTimer();
+      }
+
+      function rebuildGobblerEls() {
+        game.gobblerEls.forEach(function (el) { el.remove(); });
+        game.gobblerEls = game.gobblers.map(function (t) {
+          var el = document.createElement("div");
+          el.className = "creature gobbler";
+          el.innerHTML = gobblerSVG(t.kind);
+          wrapEl.appendChild(el);
+          return el;
+        });
+      }
+
+      function correctRemaining() {
+        var n = 0;
+        for (var i = 0; i < CELLS; i++) if (!game.eaten[i] && game.rule.test(game.values[i])) n++;
+        return n;
+      }
+
+      /* ================= Rendering ================= */
+      function renderLives() {
+        var row = document.getElementById("hudLives");
+        row.innerHTML = "";
+        for (var i = 0; i < 3; i++) {
+          var s = document.createElement("span");
+          s.className = "life-icon" + (i < game.lives ? "" : " lost");
+          s.innerHTML = chomperSVG();
+          row.appendChild(s);
+        }
+      }
+      function render() {
+        if (!game) return;
+        document.getElementById("hudScore").textContent = game.score;
+        document.getElementById("hudLevel").textContent = game.level;
+        renderLives();
+        for (var i = 0; i < CELLS; i++) {
+          cellEls[i].textContent = game.eaten[i] ? "" : game.values[i];
+          cellEls[i].classList.toggle("eaten", game.eaten[i]);
+        }
+        var left = correctRemaining();
+        document.getElementById("progressLine").innerHTML =
+          "<b>" + left + "</b> correct number" + (left === 1 ? "" : "s") + " still on the board";
+        placeCreatures();
+      }
+      function placeCreatures() {
+        chomperEl.style.left = (game.chomper.x * 100 / COLS) + "%";
+        chomperEl.style.top = (game.chomper.y * 100 / ROWS) + "%";
+        var inv = Date.now() < game.invincibleUntil;
+        chomperEl.classList.toggle("invincible", inv && game.state === "playing");
+        game.gobblers.forEach(function (t, i) {
+          var el = game.gobblerEls[i];
+          if (el) { el.style.left = (t.x * 100 / COLS) + "%"; el.style.top = (t.y * 100 / ROWS) + "%"; }
+        });
+      }
+      function flashCell(i, good) {
+        var el = cellEls[i];
+        el.classList.add(good ? "flash-good" : "flash-bad");
+        setTimeout(function () { el.classList.remove("flash-good", "flash-bad"); }, 260);
+      }
+      function floatScore(x, y, text) {
+        var f = document.createElement("div");
+        f.className = "float-score";
+        f.textContent = text;
+        f.style.left = (x * 100 / COLS + 3) + "%";
+        f.style.top = (y * 100 / ROWS + 2) + "%";
+        wrapEl.appendChild(f);
+        setTimeout(function () { f.remove(); }, 850);
+      }
+      var toastTimer = null;
+      function toast(msg) {
+        var t = document.getElementById("toast");
+        t.textContent = msg;
+        t.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { t.classList.remove("show"); }, 1400);
+      }
+
+      /* ================= Movement & chomping ================= */
+      function moveChomper(dx, dy) {
+        if (!game || game.state !== "playing") return;
+        var nx = game.chomper.x + dx, ny = game.chomper.y + dy;
+        if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
+        game.chomper.x = nx; game.chomper.y = ny;
+        AudioFX.move();
+        placeCreatures();
+        checkGobblerCollision();
+      }
+      function chomp() {
+        if (!game || game.state !== "playing") return;
+        var i = idx(game.chomper.x, game.chomper.y);
+        chomperEl.classList.remove("chomp");
+        void chomperEl.offsetWidth;
+        chomperEl.classList.add("chomp");
+        if (game.eaten[i]) { toast("NOTHING HERE"); return; }
+        if (game.rule.test(game.values[i])) {
+          game.eaten[i] = true;
+          game.streak++;
+          var pts = 10 + (game.streak >= 5 ? 5 : 0) + (game.streak >= 10 ? 10 : 0);
+          game.score += pts;
+          AudioFX.chompGood(game.streak);
+          flashCell(i, true);
+          floatScore(game.chomper.x, game.chomper.y, "+" + pts);
+          if (game.streak === 5) toast("STREAK x5 — BONUS POINTS");
+          if (game.streak === 10) toast("STREAK x10 — ON FIRE");
+          render();
+          if (correctRemaining() === 0) levelClear();
+        } else {
+          AudioFX.chompBad();
+          flashCell(i, false);
+          loseLife("WRONG NUMBER!");
+        }
+      }
+      function loseLife(reason) {
+        game.lives--;
+        game.streak = 0;
+        chomperEl.classList.remove("hurt");
+        void chomperEl.offsetWidth;
+        chomperEl.classList.add("hurt");
+        render();
+        if (game.lives <= 0) { gameOver(); return; }
+        toast(reason + "  " + game.lives + " LEFT");
+        respawnChomper();
+      }
+      function respawnChomper() {
+        game.chomper = { x: 2, y: 2 };
+        game.invincibleUntil = Date.now() + 2500;
+        // Nudge gobblers away from the spawn point
+        game.gobblers.forEach(function (t) {
+          if (Math.abs(t.x - 2) <= 1 && Math.abs(t.y - 2) <= 1) { t.x = t.x < 2 ? 0 : 5; }
+        });
+        placeCreatures();
+      }
+      function checkGobblerCollision() {
+        if (!game || game.state !== "playing") return;
+        if (Date.now() < game.invincibleUntil) return;
+        for (var i = 0; i < game.gobblers.length; i++) {
+          var t = game.gobblers[i];
+          if (t.x === game.chomper.x && t.y === game.chomper.y) {
+            AudioFX.hurt();
+            loseLife("A GOBBLER GOT YOU!");
+            return;
+          }
+        }
+      }
+
+      /* ================= Gobblers ================= */
+      function stepGobblers() {
+        if (!game || game.state !== "playing") return;
+        game.gobblers.forEach(function (t) {
+          var dx = 0, dy = 0;
+          var m = game.chomper;
+          if (t.kind === "hunter") {
+            // Hunt: step toward the chomper most of the time
+            if (Math.random() < 0.78) {
+              if (Math.abs(m.x - t.x) >= Math.abs(m.y - t.y)) dx = Math.sign(m.x - t.x);
+              else dy = Math.sign(m.y - t.y);
+              if (dx === 0 && dy === 0) dx = 1;
+            } else { var r = randomStep(); dx = r.x; dy = r.y; }
+          } else if (t.kind === "scribbler") {
+            var r2 = randomStep(); dx = r2.x; dy = r2.y;
+          } else {
+            // Wanderer: keep a heading, change it sometimes or at walls
+            if (!t.dir || (t.dir.x === 0 && t.dir.y === 0) || Math.random() < 0.3) t.dir = randomStep();
+            dx = t.dir.x; dy = t.dir.y;
+            if (t.x + dx < 0 || t.x + dx >= COLS || t.y + dy < 0 || t.y + dy >= ROWS) { t.dir = randomStep(); dx = t.dir.x; dy = t.dir.y; }
+          }
+          var nx = t.x + dx, ny = t.y + dy;
+          if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
+          t.x = nx; t.y = ny;
+          if (t.kind === "scribbler") scribblerRewrite(t);
+        });
+        placeCreatures();
+        checkGobblerCollision();
+      }
+      function randomStep() {
+        var dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
+        return dirs[randInt(0, 3)];
+      }
+      function scribblerRewrite(t) {
+        var i = idx(t.x, t.y);
+        if (game.eaten[i]) return;
+        var wasCorrect = game.rule.test(game.values[i]);
+        if (wasCorrect && correctRemaining() <= 4) return; // never strand the player
+        var pool = Math.random() < 0.4 ? game.rule.correctPool() : game.rule.wrongPool();
+        var v = pool[randInt(0, pool.length - 1)];
+        if (v === game.values[i]) return;
+        game.values[i] = v;
+        cellEls[i].textContent = v;
+        document.getElementById("progressLine").innerHTML =
+          "<b>" + correctRemaining() + "</b> correct numbers still on the board";
+      }
+
+      /* ================= Timer ================= */
+      function startTimer() {
+        stopTimer();
+        game.timer = setInterval(stepGobblers, gobblerSpeed(game.level));
+      }
+      function stopTimer() { if (game && game.timer) { clearInterval(game.timer); game.timer = null; } }
+
+      /* ================= Flow ================= */
+      var overlays = { start: "ovStart", pause: "ovPause", level: "ovLevel", over: "ovOver" };
+      function showOverlay(name) {
+        Object.keys(overlays).forEach(function (k) {
+          document.getElementById(overlays[k]).hidden = (k !== name);
+        });
+      }
+      function hideOverlays() {
+        Object.keys(overlays).forEach(function (k) { document.getElementById(overlays[k]).hidden = true; });
+      }
+      function levelClear() {
+        game.state = "clear";
+        stopTimer();
+        var bonus = 100 + game.level * 10;
+        game.score += bonus;
+        AudioFX.levelClear();
+        render();
+        document.getElementById("levelClearTitle").textContent = "LEVEL " + game.level + " CLEAR!";
+        document.getElementById("levelClearText").textContent =
+          "Board swept clean. Level bonus +" + bonus + " points. Gobblers get faster from here…";
+        showOverlay("level");
+      }
+      function gameOver() {
+        game.state = "over";
+        stopTimer();
+        AudioFX.gameOver();
+        render();
+        document.getElementById("finalScore").textContent = game.score;
+        document.getElementById("finalDetail").textContent =
+          "You reached level " + game.level + " — " + game.rule.short + ".";
+        document.getElementById("scoreEntry").style.display = "flex";
+        document.getElementById("scoreSavedMsg").hidden = true;
+        document.getElementById("nameInput").value = "";
+        showOverlay("over");
+      }
+      function pauseGame() {
+        if (!game || game.state !== "playing") return;
+        game.state = "paused";
+        stopTimer();
+        showOverlay("pause");
+      }
+      function resumeGame() {
+        if (!game || game.state !== "paused") return;
+        game.state = "playing";
+        hideOverlays();
+        startTimer();
+      }
+      function quitToTitle() {
+        stopTimer();
+        game = null;
+        showOverlay("start");
+      }
+
+      /* ================= High scores (session) ================= */
+      function renderScores() {
+        var list = document.getElementById("scoreList");
+        var empty = document.getElementById("scoreEmpty");
+        list.innerHTML = "";
+        empty.style.display = highScores.length ? "none" : "block";
+        highScores.forEach(function (s, i) {
+          var li = document.createElement("li");
+          li.innerHTML = '<span><span class="rank">' + (i + 1) + '.</span><span class="s-name"></span></span>' +
+            '<span class="s-level">LV ' + s.level + '</span><span class="s-score">' + s.score + "</span>";
+          li.querySelector(".s-name").textContent = s.name;
+          list.appendChild(li);
+        });
+      }
+      document.getElementById("btnSaveScore").addEventListener("click", function () {
+        var name = document.getElementById("nameInput").value.trim().toUpperCase() || "PLAYER";
+        highScores.push({ name: name, score: game.score, level: game.level });
+        highScores.sort(function (a, b) { return b.score - a.score; });
+        highScores = highScores.slice(0, 8);
+        renderScores();
+        document.getElementById("scoreEntry").style.display = "none";
+        document.getElementById("scoreSavedMsg").hidden = false;
+      });
+
+      /* ================= Controls ================= */
+      document.getElementById("btnStart").addEventListener("click", function () {
+        AudioFX.unlock(); hideOverlays(); newGame();
+      });
+      document.getElementById("btnAgain").addEventListener("click", function () {
+        AudioFX.unlock(); hideOverlays(); newGame();
+      });
+      document.getElementById("btnNextLevel").addEventListener("click", function () {
+        hideOverlays(); setupLevel(game.level + 1);
+      });
+      document.getElementById("btnResume").addEventListener("click", resumeGame);
+      document.getElementById("btnPause").addEventListener("click", function () {
+        if (game && game.state === "playing") pauseGame();
+        else if (game && game.state === "paused") resumeGame();
+      });
+      document.getElementById("btnQuitFromPause").addEventListener("click", quitToTitle);
+      document.getElementById("btnTitleFromOver").addEventListener("click", quitToTitle);
+      document.getElementById("btnSound").addEventListener("click", function () {
+        var on = AudioFX.toggle();
+        this.textContent = on ? "SOUND ON" : "SOUND OFF";
+      });
+      document.getElementById("btnChomp").addEventListener("click", function () { AudioFX.unlock(); chomp(); });
+      document.querySelectorAll(".dpad button").forEach(function (b) {
+        b.addEventListener("click", function () {
+          AudioFX.unlock();
+          var d = b.getAttribute("data-dir");
+          if (d === "up") moveChomper(0, -1);
+          else if (d === "down") moveChomper(0, 1);
+          else if (d === "left") moveChomper(-1, 0);
+          else if (d === "right") moveChomper(1, 0);
+        });
+      });
+
+      document.addEventListener("keydown", function (e) {
+        var k = e.key;
+        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].indexOf(k) !== -1) e.preventDefault();
+        AudioFX.unlock();
+        if (k === "ArrowUp" || k === "w" || k === "W") moveChomper(0, -1);
+        else if (k === "ArrowDown" || k === "s" || k === "S") moveChomper(0, 1);
+        else if (k === "ArrowLeft" || k === "a" || k === "A") moveChomper(-1, 0);
+        else if (k === "ArrowRight" || k === "d" || k === "D") moveChomper(1, 0);
+        else if (k === " " || k === "Enter") {
+          if (game && game.state === "playing") chomp();
+          else if (!game) { hideOverlays(); newGame(); }
+        }
+        else if (k === "p" || k === "P") {
+          if (game && game.state === "playing") pauseGame();
+          else if (game && game.state === "paused") resumeGame();
+        }
+      });
+
+      // Swipe on the board to move; a plain tap chompes
+      var touchStart = null;
+      wrapEl.addEventListener("touchstart", function (e) {
+        var t = e.changedTouches[0];
+        touchStart = { x: t.clientX, y: t.clientY, time: Date.now() };
+      }, { passive: true });
+      wrapEl.addEventListener("touchend", function (e) {
+        if (!touchStart) return;
+        var t = e.changedTouches[0];
+        var dx = t.clientX - touchStart.x, dy = t.clientY - touchStart.y;
+        var adx = Math.abs(dx), ady = Math.abs(dy);
+        AudioFX.unlock();
+        if (Math.max(adx, ady) < 24) {
+          if (game && game.state === "playing") chomp();
+        } else if (adx > ady) moveChomper(dx > 0 ? 1 : -1, 0);
+        else moveChomper(0, dy > 0 ? 1 : -1);
+        touchStart = null;
+      }, { passive: true });
+
+      document.addEventListener("visibilitychange", function () {
+        if (document.hidden && game && game.state === "playing") pauseGame();
+      });
+
+      // Boot: draw a demo board behind the title screen
+      (function boot() {
+        game = { level: 1, score: 0, lives: 3, streak: 0, state: "ready",
+          rule: pickRule(1), values: [], eaten: [], chomper: { x: 2, y: 2 },
+          gobblers: [], gobblerEls: [], invincibleUntil: 0, timer: null };
+        var cp = shuffle(game.rule.correctPool().slice());
+        var wp = shuffle(game.rule.wrongPool().slice());
+        var vals = [], i;
+        for (i = 0; i < 10; i++) vals.push(cp[i % cp.length]);
+        while (vals.length < CELLS) vals.push(wp[(i++) % wp.length]);
+        game.values = shuffle(vals);
+        game.eaten = game.values.map(function () { return false; });
+        document.getElementById("ruleText").innerHTML = game.rule.label;
+        render();
+        renderScores();
+      })();
+    </script>
+  </body>
+</html>
