@@ -152,6 +152,9 @@
         user-select: none;
         -webkit-user-select: none;
       }
+      /* Board geometry must match CONFIG.COLS/ROWS in the script
+         (6 columns x 5 rows). Change both together, or creature
+         positions (set by percentage) will desync from the grid. */
       .board {
         display: grid;
         grid-template-columns: repeat(6, 1fr);
@@ -439,6 +442,7 @@
       }
       @media (prefers-reduced-motion: reduce) {
         .creature { transition: none; }
+        .creature.chomper.chomp svg, .creature.chomper.hurt { animation: none; }
         .float-score { animation-duration: .01s; }
       }
     </style>
@@ -469,7 +473,7 @@
       <div class="rule-banner">
         <div class="rule-kicker">Chomp only the numbers that are</div>
         <div class="rule-text" id="ruleText">Multiples of <span class="rule-num">3</span></div>
-        <div class="progress-line" id="progressLine"><b>0</b> of 0 still on the board</div>
+        <div class="progress-line" id="progressLine" aria-live="polite" aria-atomic="true"><b>0</b> of 0 still on the board</div>
       </div>
 
       <!-- Board -->
@@ -561,6 +565,10 @@
 
     <script>
       "use strict";
+      // TRUST BOUNDARY: innerHTML is used only for constant SVG and for
+      // strings built from internal numbers/enums (rule labels, counts).
+      // Anything that ever comes from a player MUST go through
+      // textContent (see renderScores) — never through innerHTML.
       /* ================= Creatures (inline SVG) ================= */
       function chomperSVG() {
         return '<svg viewBox="0 0 64 64" aria-hidden="true">' +
@@ -600,9 +608,15 @@
         function ensure() {
           if (!ctx) {
             var AC = window.AudioContext || window.webkitAudioContext;
-            if (AC) ctx = new AC();
+            if (AC) {
+              try { ctx = new AC(); } catch (e) { ctx = null; }
+            }
           }
-          if (ctx && ctx.state === "suspended") ctx.resume();
+          if (ctx && ctx.state === "suspended") {
+            // A rejected resume (autoplay policy) must not become an
+            // unhandled rejection: audio is decorative, the game is not.
+            try { var pr = ctx.resume(); if (pr && pr.catch) pr.catch(function () {}); } catch (e) {}
+          }
           return ctx;
         }
         function tone(freq, dur, type, vol, when, slideTo) {
@@ -621,7 +635,6 @@
         return {
           unlock: function () { ensure(); },
           toggle: function () { enabled = !enabled; if (enabled) ensure(); return enabled; },
-          isOn: function () { return enabled; },
           move: function () { tone(220, 0.05, "square", 0.04); },
           chompGood: function (streak) {
             var base = 392 + Math.min(streak, 8) * 40;
@@ -643,24 +656,45 @@
             var notes = [392, 370, 349, 311];
             for (var i = 0; i < notes.length; i++) tone(notes[i], 0.26, "triangle", 0.14, i * 0.2);
           },
-          gobblerSpawn: function () { tone(140, 0.14, "sawtooth", 0.06, 0, 220); }
+          // NOTE: no gobblerSpawn sound — Gobblers spawn silently in
+          // rebuildGobblerEls(). If one is added, wire it there, not here.
         };
       })();
 
       /* ================= Rules ================= */
+      /**
+       * Test whether n is prime by trial division up to sqrt(n).
+       * n is at most a few hundred (rule pools cap at ~30 + 5*level),
+       * so trial division is cheaper than a sieve and needs no table.
+       * Returns false for 0 and 1: 1 is not prime, and it must land in
+       * the wrong pool for the Primes rule, not the correct one.
+       */
       function isPrime(n) {
         if (n < 2) return false;
         for (var i = 2; i * i <= n; i++) if (n % i === 0) return false;
         return true;
       }
       function randInt(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
+      // shuffle returns a NEW array; callers' pools are never mutated.
+      // (Previously it shuffled in place, which was safe only because
+      // every caller happened to pass a fresh .slice().)
       function shuffle(arr) {
-        for (var i = arr.length - 1; i > 0; i--) {
+        var a = arr.slice();
+        for (var i = a.length - 1; i > 0; i--) {
           var j = Math.floor(Math.random() * (i + 1));
-          var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+          var tmp = a[i]; a[i] = a[j]; a[j] = tmp;
         }
-        return arr;
+        return a;
       }
+      /**
+       * Pick the rule for a level.
+       * Levels 1-5 cycle deterministically through the five kinds so a
+       * new player meets each rule once before any repeats; from level
+       * 6, half the levels re-roll randomly so later play is not a
+       * fixed rotation a player can memorise. The returned record is:
+       * `label` (HTML for the banner, internal numbers only),
+       * `test` (the predicate), and two pools that MUST be disjoint.
+       */
       function pickRule(level) {
         var kinds = ["multiples", "factors", "primes", "greaterless", "evenodd"];
         var kind = kinds[(level - 1) % kinds.length];
@@ -704,9 +738,40 @@
       }
 
       /* ================= Game state ================= */
-      var COLS = 6, ROWS = 5, CELLS = COLS * ROWS;
+      // CONFIG is the single tuning surface. Board geometry, lives,
+      // scoring, Gobbler difficulty, and UI timings live here — not
+      // scattered as literals through the game functions. The CSS
+      // grid (6x5) must still be changed by hand to match COLS/ROWS.
+      var CONFIG = {
+        COLS: 6, ROWS: 5,
+        LIVES: 3,
+        POINTS: { base: 10, streak5: 5, streak10: 10 },
+        LEVEL_BONUS: { base: 100, perLevel: 10 },
+        BOARD: { minCorrect: 9, maxCorrect: 13, demoCorrect: 10 },
+        GOBBLER: { maxCount: 4, baseIntervalMs: 1500, stepMsPerLevel: 130, minIntervalMs: 430,
+                   hunterChaseChance: 0.78, scribblerRewriteChance: 0.4 },
+        PLAYER: { invincibleMs: 2500 },
+        TIMING: { flashMs: 260, toastMs: 1400, floatMs: 850, swipePx: 24 }
+      };
+      var COLS = CONFIG.COLS, ROWS = CONFIG.ROWS, CELLS = COLS * ROWS;
+      // Spawn is derived, not hardcoded (2,2): centre of the board.
+      // Always copy SPAWN into game.chomper — never assign it directly,
+      // or movement would mutate this shared object.
+      var SPAWN = { x: Math.floor(COLS / 2) - 1, y: Math.floor(ROWS / 2) };
       var game = null;
-      var highScores = []; // session leaderboard (name, score, level)
+      // ScoreStore is the only place scores are kept. Today it is
+      // in-memory (session-only, as the README promises). A future
+      // localStorage adapter implements the same three methods and
+      // nothing else in the game changes.
+      var ScoreStore = {
+        _scores: [],
+        list: function () { return this._scores.slice(); },
+        add: function (entry) {
+          this._scores.push(entry);
+          this._scores.sort(function (a, b) { return b.score - a.score; });
+          this._scores = this._scores.slice(0, 8);
+        }
+      };
 
       var boardEl = document.getElementById("board");
       var wrapEl = document.getElementById("boardWrap");
@@ -735,39 +800,59 @@
 
       function newGame() {
         game = {
-          level: 1, score: 0, lives: 3, streak: 0,
+          level: 1, score: 0, lives: CONFIG.LIVES, streak: 0,
           state: "ready", rule: null, values: [], eaten: [],
-          chomper: { x: 2, y: 2 }, gobblers: [], gobblerEls: [],
-          invincibleUntil: 0, timer: null, elapsed: 0
+          chomper: { x: SPAWN.x, y: SPAWN.y }, gobblers: [], gobblerEls: [],
+          invincibleUntil: 0, timer: null
         };
         setupLevel(1);
       }
 
-      function gobblerCount(level) { return Math.min(4, 1 + Math.floor((level - 1) / 2)); }
-      function gobblerSpeed(level) { return Math.max(430, 1500 - (level - 1) * 130); }
+      function gobblerCount(level) { return Math.min(CONFIG.GOBBLER.maxCount, 1 + Math.floor((level - 1) / 2)); }
+      // One step every 1.5s at level 1, quickening 130ms per level,
+      // floored at 430ms so later levels stay humanly playable and
+      // the CSS creature transition (160ms) never lags a step.
+      function gobblerSpeed(level) { return Math.max(CONFIG.GOBBLER.minIntervalMs, CONFIG.GOBBLER.baseIntervalMs - (level - 1) * CONFIG.GOBBLER.stepMsPerLevel); }
+
+      /**
+       * Build a board for a rule. Returns { values, eaten }.
+       * `correctCount` is capped by the pool size: a small factor pool
+       * (Factors of 12 has only 6 factors) legitimately yields fewer
+       * correct cells than the 9-13 target, and that is not an error.
+       * Duplicates are possible when the wrong pool is smaller than
+       * the remaining cells (e.g. Multiples of 2); duplicates are legal
+       * board cells, and correctRemaining() counts every uneaten one.
+       * This one builder serves both setupLevel() and the title-screen
+       * demo in boot() — previously they were two copies that had
+       * already diverged (9-13 vs a flat 10).
+       */
+      function buildBoard(rule, correctCount) {
+        var correctPool = shuffle(rule.correctPool());
+        var wrongPool = shuffle(rule.wrongPool());
+        var want = Math.min(correctPool.length, correctCount);
+        var values = [], wi = 0, i;
+        for (i = 0; i < want; i++) values.push(correctPool[i]);
+        while (values.length < CELLS) values.push(wrongPool[wi++ % wrongPool.length]);
+        return { values: shuffle(values), eaten: values.map(function () { return false; }) };
+      }
 
       function setupLevel(level) {
         stopTimer();
         game.level = level;
         game.rule = pickRule(level);
         game.streak = 0;
-        game.chomper = { x: 2, y: 2 };
+        game.chomper = { x: SPAWN.x, y: SPAWN.y };
         game.invincibleUntil = 0;
 
-        var correctPool = shuffle(game.rule.correctPool().slice());
-        var wrongPool = shuffle(game.rule.wrongPool().slice());
-        var wantCorrect = Math.min(correctPool.length, randInt(9, 13));
-        var values = [];
-        var ci = 0, wi = 0, i;
-        for (i = 0; i < wantCorrect; i++) values.push(correctPool[ci++ % correctPool.length]);
-        while (values.length < CELLS) values.push(wrongPool[wi++ % wrongPool.length]);
-        game.values = shuffle(values);
-        game.eaten = game.values.map(function () { return false; });
+        var built = buildBoard(game.rule, randInt(CONFIG.BOARD.minCorrect, CONFIG.BOARD.maxCorrect));
+        game.values = built.values;
+        game.eaten = built.eaten;
+        var i;
 
         // Gobblers: spawn away from the chomper
         var kinds = ["wanderer", "scribbler", "hunter", "wanderer"];
         game.gobblers = [];
-        var corners = [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 0, y: 4 }, { x: 5, y: 4 }];
+        var corners = [{ x: 0, y: 0 }, { x: COLS - 1, y: 0 }, { x: 0, y: ROWS - 1 }, { x: COLS - 1, y: ROWS - 1 }];
         shuffle(corners);
         for (i = 0; i < gobblerCount(level); i++) {
           game.gobblers.push({ x: corners[i].x, y: corners[i].y, kind: kinds[i % kinds.length], dir: { x: 0, y: 0 } });
@@ -800,7 +885,7 @@
       function renderLives() {
         var row = document.getElementById("hudLives");
         row.innerHTML = "";
-        for (var i = 0; i < 3; i++) {
+        for (var i = 0; i < CONFIG.LIVES; i++) {
           var s = document.createElement("span");
           s.className = "life-icon" + (i < game.lives ? "" : " lost");
           s.innerHTML = chomperSVG();
@@ -834,7 +919,7 @@
       function flashCell(i, good) {
         var el = cellEls[i];
         el.classList.add(good ? "flash-good" : "flash-bad");
-        setTimeout(function () { el.classList.remove("flash-good", "flash-bad"); }, 260);
+        setTimeout(function () { el.classList.remove("flash-good", "flash-bad"); }, CONFIG.TIMING.flashMs);
       }
       function floatScore(x, y, text) {
         var f = document.createElement("div");
@@ -843,7 +928,7 @@
         f.style.left = (x * 100 / COLS + 3) + "%";
         f.style.top = (y * 100 / ROWS + 2) + "%";
         wrapEl.appendChild(f);
-        setTimeout(function () { f.remove(); }, 850);
+        setTimeout(function () { f.remove(); }, CONFIG.TIMING.floatMs);
       }
       var toastTimer = null;
       function toast(msg) {
@@ -851,7 +936,7 @@
         t.textContent = msg;
         t.classList.add("show");
         clearTimeout(toastTimer);
-        toastTimer = setTimeout(function () { t.classList.remove("show"); }, 1400);
+        toastTimer = setTimeout(function () { t.classList.remove("show"); }, CONFIG.TIMING.toastMs);
       }
 
       /* ================= Movement & chomping ================= */
@@ -874,7 +959,11 @@
         if (game.rule.test(game.values[i])) {
           game.eaten[i] = true;
           game.streak++;
-          var pts = 10 + (game.streak >= 5 ? 5 : 0) + (game.streak >= 10 ? 10 : 0);
+          // Streak bonus stacks on purpose: +5 at streak 5 (15 total),
+          // +15 at streak 10 (25 total). It rewards long runs more
+          // than linearly; the toasts at exactly 5 and 10 exist so
+          // the player can learn the thresholds instead of guessing.
+          var pts = CONFIG.POINTS.base + (game.streak >= 5 ? CONFIG.POINTS.streak5 : 0) + (game.streak >= 10 ? CONFIG.POINTS.streak10 : 0);
           game.score += pts;
           AudioFX.chompGood(game.streak);
           flashCell(i, true);
@@ -901,11 +990,15 @@
         respawnChomper();
       }
       function respawnChomper() {
-        game.chomper = { x: 2, y: 2 };
-        game.invincibleUntil = Date.now() + 2500;
+        game.chomper = { x: SPAWN.x, y: SPAWN.y };
+        // 2.5s of grace after losing a life, so a Gobbler standing on
+        // the spawn cannot chain-kill the player before they can move.
+        // The Gobbler nudge below is the same idea, done spatially:
+        // moving x to an edge is enough because the spawn is central.
+        game.invincibleUntil = Date.now() + CONFIG.PLAYER.invincibleMs;
         // Nudge gobblers away from the spawn point
         game.gobblers.forEach(function (t) {
-          if (Math.abs(t.x - 2) <= 1 && Math.abs(t.y - 2) <= 1) { t.x = t.x < 2 ? 0 : 5; }
+          if (Math.abs(t.x - SPAWN.x) <= 1 && Math.abs(t.y - SPAWN.y) <= 1) { t.x = t.x < SPAWN.x ? 0 : COLS - 1; }
         });
         placeCreatures();
       }
@@ -923,6 +1016,15 @@
       }
 
       /* ================= Gobblers ================= */
+      /**
+       * Advance the Gobblers one step. Movement is a discrete timer
+       * step (setInterval), not requestAnimationFrame, because Gobblers
+       * move cell-to-cell, not smoothly — the interval IS the game
+       * speed, and gobblerSpeed(level) is the difficulty curve.
+       * Hunter moves toward the Chomper 78% of the time so it feels
+       * threatening without being inescapable; the other 22% is a
+       * random step, which is what lets a cornered player escape.
+       */
       function stepGobblers() {
         if (!game || game.state !== "playing") return;
         game.gobblers.forEach(function (t) {
@@ -930,7 +1032,7 @@
           var m = game.chomper;
           if (t.kind === "hunter") {
             // Hunt: step toward the chomper most of the time
-            if (Math.random() < 0.78) {
+            if (Math.random() < CONFIG.GOBBLER.hunterChaseChance) {
               if (Math.abs(m.x - t.x) >= Math.abs(m.y - t.y)) dx = Math.sign(m.x - t.x);
               else dy = Math.sign(m.y - t.y);
               if (dx === 0 && dy === 0) dx = 1;
@@ -955,12 +1057,21 @@
         var dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
         return dirs[randInt(0, 3)];
       }
+      /**
+       * Rewrite the cell a Scribbler stepped onto.
+       * The <= 4 guard is a solvability invariant, not a tuning knob:
+       * if the last few correct cells could be rewritten away, the
+       * level could become unwinnable with no move the player made.
+       * The Chomper-cell skip is the fairness counterpart: never
+       * rewrite a value the player is already standing on.
+       */
       function scribblerRewrite(t) {
         var i = idx(t.x, t.y);
         if (game.eaten[i]) return;
+        if (t.x === game.chomper.x && t.y === game.chomper.y) return; // don't rewrite under the player
         var wasCorrect = game.rule.test(game.values[i]);
         if (wasCorrect && correctRemaining() <= 4) return; // never strand the player
-        var pool = Math.random() < 0.4 ? game.rule.correctPool() : game.rule.wrongPool();
+        var pool = Math.random() < CONFIG.GOBBLER.scribblerRewriteChance ? game.rule.correctPool() : game.rule.wrongPool();
         var v = pool[randInt(0, pool.length - 1)];
         if (v === game.values[i]) return;
         game.values[i] = v;
@@ -982,6 +1093,13 @@
         Object.keys(overlays).forEach(function (k) {
           document.getElementById(overlays[k]).hidden = (k !== name);
         });
+        // Move keyboard focus into the overlay, so Enter activates its
+        // primary control instead of doing nothing (the old behaviour
+        // on pause, level-clear, and game-over). Game-over focuses the
+        // name field so the player can type immediately.
+        var focusMap = { start: "btnStart", pause: "btnResume", level: "btnNextLevel", over: "nameInput" };
+        var el = document.getElementById(focusMap[name]);
+        if (el) el.focus();
       }
       function hideOverlays() {
         Object.keys(overlays).forEach(function (k) { document.getElementById(overlays[k]).hidden = true; });
@@ -989,7 +1107,7 @@
       function levelClear() {
         game.state = "clear";
         stopTimer();
-        var bonus = 100 + game.level * 10;
+        var bonus = CONFIG.LEVEL_BONUS.base + game.level * CONFIG.LEVEL_BONUS.perLevel;
         game.score += bonus;
         AudioFX.levelClear();
         render();
@@ -1033,9 +1151,10 @@
       function renderScores() {
         var list = document.getElementById("scoreList");
         var empty = document.getElementById("scoreEmpty");
+        var scores = ScoreStore.list();
         list.innerHTML = "";
-        empty.style.display = highScores.length ? "none" : "block";
-        highScores.forEach(function (s, i) {
+        empty.style.display = scores.length ? "none" : "block";
+        scores.forEach(function (s, i) {
           var li = document.createElement("li");
           li.innerHTML = '<span><span class="rank">' + (i + 1) + '.</span><span class="s-name"></span></span>' +
             '<span class="s-level">LV ' + s.level + '</span><span class="s-score">' + s.score + "</span>";
@@ -1045,9 +1164,7 @@
       }
       document.getElementById("btnSaveScore").addEventListener("click", function () {
         var name = document.getElementById("nameInput").value.trim().toUpperCase() || "PLAYER";
-        highScores.push({ name: name, score: game.score, level: game.level });
-        highScores.sort(function (a, b) { return b.score - a.score; });
-        highScores = highScores.slice(0, 8);
+        ScoreStore.add({ name: name, score: game.score, level: game.level });
         renderScores();
         document.getElementById("scoreEntry").style.display = "none";
         document.getElementById("scoreSavedMsg").hidden = false;
@@ -1087,6 +1204,11 @@
       });
 
       document.addEventListener("keydown", function (e) {
+        // Never hijack keys the player is typing into a form control.
+        // This is what makes Space and the arrow keys usable in the
+        // high-score name field on the game-over screen.
+        var tgt = e.target;
+        if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable)) return;
         var k = e.key;
         if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].indexOf(k) !== -1) e.preventDefault();
         AudioFX.unlock();
@@ -1104,7 +1226,10 @@
         }
       });
 
-      // Swipe on the board to move; a plain tap chompes
+      // Swipe on the board to move; a plain tap chompes.
+      // Below 24px is a tap; above it, the dominant axis is a move.
+      // 24px is large enough to ignore finger tremor, small enough
+      // that a deliberate swipe on a phone board always registers.
       var touchStart = null;
       wrapEl.addEventListener("touchstart", function (e) {
         var t = e.changedTouches[0];
@@ -1116,7 +1241,7 @@
         var dx = t.clientX - touchStart.x, dy = t.clientY - touchStart.y;
         var adx = Math.abs(dx), ady = Math.abs(dy);
         AudioFX.unlock();
-        if (Math.max(adx, ady) < 24) {
+        if (Math.max(adx, ady) < CONFIG.TIMING.swipePx) {
           if (game && game.state === "playing") chomp();
         } else if (adx > ady) moveChomper(dx > 0 ? 1 : -1, 0);
         else moveChomper(0, dy > 0 ? 1 : -1);
@@ -1127,18 +1252,17 @@
         if (document.hidden && game && game.state === "playing") pauseGame();
       });
 
-      // Boot: draw a demo board behind the title screen
+      // Boot: draw a demo board behind the title screen.
+      // The title screen is not an empty backdrop: it renders a real
+      // (non-interactive) board so a first-time visitor sees the game
+      // before pressing Start. It has no Gobblers and no timer on purpose.
       (function boot() {
-        game = { level: 1, score: 0, lives: 3, streak: 0, state: "ready",
-          rule: pickRule(1), values: [], eaten: [], chomper: { x: 2, y: 2 },
+        game = { level: 1, score: 0, lives: CONFIG.LIVES, streak: 0, state: "ready",
+          rule: pickRule(1), values: [], eaten: [], chomper: { x: SPAWN.x, y: SPAWN.y },
           gobblers: [], gobblerEls: [], invincibleUntil: 0, timer: null };
-        var cp = shuffle(game.rule.correctPool().slice());
-        var wp = shuffle(game.rule.wrongPool().slice());
-        var vals = [], i;
-        for (i = 0; i < 10; i++) vals.push(cp[i % cp.length]);
-        while (vals.length < CELLS) vals.push(wp[(i++) % wp.length]);
-        game.values = shuffle(vals);
-        game.eaten = game.values.map(function () { return false; });
+        var built = buildBoard(game.rule, CONFIG.BOARD.demoCorrect);
+        game.values = built.values;
+        game.eaten = built.eaten;
         document.getElementById("ruleText").innerHTML = game.rule.label;
         render();
         renderScores();
